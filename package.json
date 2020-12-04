@@ -1,0 +1,26 @@
+{
+  "name": "matchbox",
+  "version": "1.0.0",
+  "description": "General search engine in JS",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo 'No test'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dna2zodiac/matchbox.git"
+  },
+  "keywords": [
+    "search",
+    "engine"
+  ],
+  "author": "Seven Lju",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/dna2zodiac/matchbox/issues"
+  },
+  "homepage": "https://github.com/dna2zodiac/matchbox#readme",
+  "devDependencies": {
+    "webpack-cli": "^4.2.0"
+  }
+}

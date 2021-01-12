@@ -2,6 +2,10 @@ const i_fs = require('fs');
 const i_path = require('path');
 const i_url = require('url');
 
+const g_api = {
+   search: require('./storage/api').api,
+};
+
 const i_env = {
    debug: !!process.env.MATCHBOX_DEBUG,
    server: {
@@ -65,6 +69,7 @@ function basicRoute (req, res, router) {
       let key = path.shift();
       f = f[key];
       if (!f) break;
+      if (key === 'constructor') break;
       if (typeof(f) === 'function') {
          return f(req, res, {
             path: path,
@@ -162,7 +167,13 @@ const server = createServer({
          text: 'hello world',
          path: `/${options.path.join('/')}`
       }));
-   }
+   },
+   api: {
+      v1: {
+         search: g_api.search,
+      }, // v1
+      v2: (_, res, __) => { res.end('????'); }
+   }, // api
 });
 server.listen(i_env.server.port, i_env.server.host, () => {
    console.log(`MatchBox server is listening at ${i_env.server.host}:${i_env.server.port}`);

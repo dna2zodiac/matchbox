@@ -15,7 +15,11 @@ const i_path = require('path');
 const i_fs = require('fs');
 const i_crypto = require('crypto');
 
-const MAX_ID = 0xffffffff;
+// 4 bytes max num, about N = 4.2 * 10^9
+// const MAX_ID = 0xffffffff;
+// N = 8 * 10^8, for bitmap,
+// each search requires 100MB * 2
+const MAX_ID = 0x2faf0800;
 
 function int32ToBuffer(num) {
    // big endian

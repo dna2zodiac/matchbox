@@ -70,7 +70,7 @@ class Bitmap {
       id--;
       const a = ~~(id/8);
       const b = id % 8;
-      const mask = 0xff - 1 << b;
+      const mask = mask & (0xff - 1 << b);
       this.bitmap[a] &= mask;
    }
 
@@ -145,7 +145,7 @@ class TrigramSearchEngine {
       return i_path.join('/', `${b}`, `${c}`, `${d}`, `${group}.json`);
    }
 
-   getHashDir(hash) {
+   getHashPath(hash) {
       if (!hash || !hash.length) return null;
       const p = [];
       for (let i = 0, n = hash.length; i < n; i += 4) {
@@ -199,12 +199,12 @@ class TrigramSearchEngine {
    }
 
    async hasHash(hash) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
       return i_fs.existsSync(path);
    }
 
    async writeHash(hash, id, url) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
       const dir = i_path.dirname(path);
       if (i_fs.existsSync(path)) {
          throw 'exist';
@@ -216,7 +216,7 @@ class TrigramSearchEngine {
    }
 
    async getHashUrl(hash) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
       if (!i_fs.existsSync(path)) {
          return [];
       }
@@ -226,7 +226,7 @@ class TrigramSearchEngine {
    }
 
    async addHashUrl(hash, url) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
       if (!i_fs.existsSync(path)) {
          throw 'not-exist';
       }
@@ -240,7 +240,7 @@ class TrigramSearchEngine {
    }
 
    async delHashUrl(hash, url) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
       if (!i_fs.existsSync(path)) {
          throw 'not-exist';
       }
@@ -248,8 +248,10 @@ class TrigramSearchEngine {
       const obj = JSON.parse(blob);
       if (obj.url) {
          const i = obj.url.indexOf(url);
-         if (i >= 0) obj.url = obj.url.splice(i, 1);
-         i_fs.writeFileSync(path, JSON.stringify(obj));
+         if (i >= 0) {
+            obj.url = obj.url.splice(i, 1);
+            i_fs.writeFileSync(path, JSON.stringify(obj));
+         }
       }
       return obj;
    }
@@ -297,6 +299,19 @@ class TrigramSearchEngine {
             }
             r(bitmap);
          });
+      });
+   }
+
+   async trigramDelId(trigram, id) {
+      const n = await this.trigramCount(trigram);
+      if (!n) return;
+      const bitmap = await this.trigramIdList(trigram);
+      bitmap.clr(id);
+      const path = i_path.join(this.baseDir, '_trigram', this.getTrigramPath(trigram));
+      i_fs.writeFileSync(path, '');
+      await bitmap.asyncForEach(async function (id) {
+         i_fs.appendFileSync(path, int32ToBuffer(id));
+         return false;
       });
    }
 
@@ -414,9 +429,9 @@ class TrigramSearchEngine {
    }
 
    // TODO:
+   // need a file walker to get each file in _trigram (remove id), _hash (remove url)
    async trigramGarbageCollect(trigram) {}
-   async trigramDelId(trigram, id) {}
-   async delHashUrl() {}
+   async delUrl(url) {}
    async delDocIndex(id) {} // record a hole and store in a list
 
 }

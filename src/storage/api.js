@@ -9,16 +9,46 @@ const env = {
    trigramBaseDir: i_path.resolve(process.env.MATCHBOX_TRIGRAM_BASEDIR)
 };
 
+class TrigramWorld {
+   constructor() {
+      this.engine = {};
+   }
+
+   async search(shard, query, options) {
+      let engine = this.engine[shard];
+      if (!engine) {
+         engine = new i_trigram_engine.TrigramSearchEngine(
+            i_path.join(env.trigramBaseDir, shard)
+         );
+         this.engine[shard] = engine;
+      }
+      const urls = await engine.search(query, options);
+      return urls;
+   }
+
+   async index(shard, url, docSrc) {
+      let engine = this.engine[shard];
+      if (!engine) {
+         engine = new i_trigram_engine.TrigramSearchEngine(
+            i_path.join(env.trigramBaseDir, shard)
+         );
+         this.engine[shard] = engine;
+      }
+      const docId = await engine.addDocIndex(url, docSrc);
+   }
+}
+
 const singleton = {
-   trigramEngine: new i_trigram_engine.TrigramSearchEngine(env.trigramBaseDir)
+   trigramEngine: new TrigramWorld()
 };
 
 const api = {
    search: async (req, res, opt) => {
       if (!i_auth.validateBasicAuth(req, res)) return;
       const urlObj = i_url.parse(req.url, true);
+      const shard = urlObj.query.s;
       const query = urlObj.query.q;
-      if (!query) return i_util.Web.e400(res);
+      if (!shard || !query) return i_util.Web.e400(res);
       const topN = parseInt(urlObj.query.n || '50');
       const caseOn = (
          // by default, switch on case sensitive
@@ -28,7 +58,7 @@ const api = {
       );
       try {
          const urls = await singleton.trigramEngine.search(
-            query, { n: topN, case: caseOn }
+            shard, query, { n: topN, case: caseOn }
          );
          i_util.Web.rjson(res, { urls });
       } catch (err) {
@@ -41,14 +71,15 @@ const api = {
       if (req.method !== 'POST') return i_util.Web.e405(res);
       const urlObj = i_url.parse(req.url, true);
       const url = urlObj.query.url;
-      if (!url) return i_util.Web.e400(res);
+      const shard = urlObj.query.s;
+      if (!shard || !url) return i_util.Web.e400(res);
       try {
          const docSrc = (await i_util.Web.readRequestBinary(req)).toString();
          // do not process empty file and trigram requires length gte 3
          if (!docSrc || docSrc.length < 3) return i_util.Web.e400(res);
          // do not process binary file
          if (docSrc.indexOf('\0') >= 0) return i_util.Web.e400(res);
-         const docId = await singleton.trigramEngine.addDocIndex(url, docSrc);
+         const docId = await singleton.trigramEngine.addDocIndex(shard, url, docSrc);
          i_util.Web.rjson(res, { docId });
       } catch (err) {
          console.error('api/index', err);

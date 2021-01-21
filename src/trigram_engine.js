@@ -15,119 +15,18 @@ const i_path = require('path');
 const i_fs = require('fs');
 const i_crypto = require('crypto');
 
+const i_u = require('./util');
+const i_b = require('./bitmap');
+
 // 4 bytes max num, about N = 4.2 * 10^9
 // const MAX_ID = 0xffffffff;
 // N = 8 * 10^8, for bitmap,
 // each search requires 100MB * 2
 const MAX_ID = 0x2faf0800;
 
-function int32ToBuffer(num) {
-   // big endian
-   const buf = Buffer.alloc(4);
-   buf[0] = num & 0xff;
-   buf[1] = (num & 0xff00) >> 8;
-   buf[2] = (num & 0xff0000) >> 16;
-   buf[3] = (num & 0xff000000) >> 24;
-   return buf;
-}
-
-function bufToInt32(buf, index) {
-   // big endian
-   let num = 0;
-   num |= buf[index]; index ++;
-   num |= buf[index] << 8; index ++;
-   num |= buf[index] << 16;  index ++;
-   num |= buf[index] << 24;
-   return num;
-}
-
 function transformLine(line) {
    if (!line) return line;
    return line.split(/\s+/).join(' ').trim();
-}
-
-class Bitmap {
-   /*
-      support scale:
-      N = 8388608 // = 2^20 * 8, where 2^20 = 1MB
-      which means that, one search will use mem,
-      where the size number is 2 times of N/8
-    */
-   constructor(N) {
-      this.bitmap = Buffer.alloc(Math.ceil(N/8));
-   }
-
-   isEmpty() {
-      for (let i = 0, n = this.bitmap.length; i < n; i++) {
-         if (this.bitmap[i] > 0) return false;
-      }
-      return true;
-   }
-
-   set(id) {
-      id--;
-      const a = ~~(id/8);
-      const b = id % 8;
-      this.bitmap[a] |= 1 << b;
-   }
-
-   clr(id) {
-      id--;
-      const a = ~~(id/8);
-      const b = id % 8;
-      const mask = mask & (0xff - 1 << b);
-      this.bitmap[a] &= mask;
-   }
-
-   get(id) {
-      id--;
-      const a = ~~(id/8);
-      const b = id % 8;
-      return (this.bitmap[a] & (1 << b)) > 0;
-   }
-
-   and(another) {
-      for (let i = 0, n = this.bitmap.length; i < n; i++) {
-         this.bitmap[i] &= another.bitmap[i] || 0;
-      }
-   }
-
-   or(another) {
-      for (let i = 0, n = this.bitmap.length; i < n; i++) {
-         this.bitmap[i] |= another.bitmap[i] || 0;
-      }
-   }
-
-   sub(another) {
-      /*
-            1010101010101
-            1111110000000
-        sub -------------
-            0000001010101
-       */
-      for (let i = 0, n = this.bitmap.length; i < n; i++) {
-         this.bitmap[i] &= 0xff & (~(another.bitmap[i] || 0))
-      }
-   }
-
-   clone() {
-      const one = new Bitmap(0);
-      one.bitmap = Buffer.from(this.bitmap);
-      return one;
-   }
-
-   async asyncForEach(fn) {
-      for (let i = 0, n = this.bitmap.length; i < n; i++) {
-         let bit = this.bitmap[i];
-         for (let j = 0; j < 8; j++) {
-            if (bit & 0x1) {
-               // if fn return true, skip remains
-               if (await fn(i*8+j+1)) break;
-            }
-            bit >>= 1;
-         }
-      }
-   }
 }
 
 class TrigramSearchEngine {
@@ -350,7 +249,7 @@ class TrigramSearchEngine {
       let buf = Buffer.alloc(0);
       const tris = Object.keys(map);
       // max trigram: 2^32 = 4.2B
-      buf = Buffer.concat([buf, int32ToBuffer(tris.length)]);
+      buf = Buffer.concat([buf, i_u.Buf.int32ToBuffer(tris.length)]);
       tris.forEach((tri) => {
          const list = map[tri];
          const n = list.length;
@@ -369,17 +268,17 @@ class TrigramSearchEngine {
       const buf = await this.getHashAttr(hash, '_linemap');
       const map = {};
       if (!buf) return map;
-      const N = bufToInt32(buf, 0);
+      const N = i_u.Buf.bufToInt32(buf, 0);
       let base = 4;
       for (let i = 0; i < N; i++) {
          const cstri = readCString(buf, base);
          const trigram = buf.slice(base, cstri);
          map[trigram] = [];
          base = cstri + 1;
-         const M = bufToInt32(buf, base);
+         const M = i_u.Buf.bufToInt32(buf, base);
          base += 4;
          for (let j = 0; j < M; j++) {
-            const x = bufToInt32(buf, base);
+            const x = i_u.Buf.bufToInt32(buf, base);
             map[trigram].push(x);
             base += 4;
          }
@@ -400,10 +299,10 @@ class TrigramSearchEngine {
       const path = i_path.join(this.baseDir, '_trigram', this.getTrigramPath(trigram));
       const dir = i_path.dirname(path);
       if (i_fs.existsSync(path)) {
-         i_fs.appendFileSync(path, int32ToBuffer(id));
+         i_fs.appendFileSync(path, i_u.Buf.int32ToBuffer(id));
       } else {
          i_fs.mkdirSync(dir, { recursive: true });
-         i_fs.writeFileSync(path, int32ToBuffer(id));
+         i_fs.writeFileSync(path, i_u.Buf.int32ToBuffer(id));
       }
    }
 
@@ -419,12 +318,12 @@ class TrigramSearchEngine {
 
    async trigramIdList(trigram) {
       const path = i_path.join(this.baseDir, '_trigram', this.getTrigramPath(trigram));
-      const bitmap = new Bitmap(this.nextId - 1);
+      const bitmap = new i_b.Bitmap(this.nextId - 1);
       return new Promise((r, e) => {
          i_fs.readFile(path, (err, blob) => {
             if (err) return r(bitmap);
             for (let i = 0, n = blob.length; i < n; i += 4) {
-               const id = bufToInt32(blob, i);
+               const id = i_u.Buf.bufToInt32(blob, i);
                bitmap.set(id);
             }
             r(bitmap);
@@ -440,7 +339,7 @@ class TrigramSearchEngine {
       const path = i_path.join(this.baseDir, '_trigram', this.getTrigramPath(trigram));
       i_fs.writeFileSync(path, '');
       await bitmap.asyncForEach(async function (id) {
-         i_fs.appendFileSync(path, int32ToBuffer(id));
+         i_fs.appendFileSync(path, i_u.Buf.int32ToBuffer(id));
          return false;
       });
    }
@@ -499,7 +398,7 @@ class TrigramSearchEngine {
          if (p[0][0] === p[0][1]) p[0].pop();
          if (p[1][0] === p[1][1]) p[0].pop();
          if (p[2][0] === p[2][1]) p[0].pop();
-         const bitmap = new Bitmap(this.nextId - 1);
+         const bitmap = new i_b.Bitmap(this.nextId - 1);
          for (let i0 = 0, n0 = p[0].length; i0 < n0; i0++)
             for (let i1 = 0, n1 = p[1].length; i1 < n1; i1++)
                for (let i2 = 0, n2 = p[2].length; i2 < n2; i2++)
@@ -595,8 +494,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-   int32ToBuffer,
-   bufToInt32,
-   Bitmap,
    TrigramSearchEngine,
 };

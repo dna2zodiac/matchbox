@@ -3,7 +3,7 @@ const i_path = require('path');
 const i_url = require('url');
 
 const g_api = {
-   search: require('./storage/api').api,
+   search: require('./api').api,
 };
 
 const i_env = {

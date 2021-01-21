@@ -52,6 +52,28 @@ const Web = {
    },
 };
 
+const Buf = {
+   int32ToBuffer: (num) => {
+     // big endian
+     const buf = Buffer.alloc(4);
+     buf[0] = num & 0xff;
+     buf[1] = (num & 0xff00) >> 8;
+     buf[2] = (num & 0xff0000) >> 16;
+     buf[3] = (num & 0xff000000) >> 24;
+     return buf;
+   },
+   bufToInt32: (buf, index) => {
+     // big endian
+     let num = 0;
+     num |= buf[index]; index ++;
+     num |= buf[index] << 8; index ++;
+     num |= buf[index] << 16;  index ++;
+     num |= buf[index] << 24;
+     return num;
+   },
+};
+
 module.exports = {
    Web,
+   Buf,
 };

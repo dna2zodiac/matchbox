@@ -227,6 +227,30 @@ class TrigramSearchEngine {
       return parseInt(blob);
    }
 
+   async getHashAttr(hash, key) {
+      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash), key);
+      if (!i_fs.existsSync(path)) {
+         return null;
+      }
+      const blob = i_fs.readFileSync(path);
+      return blob;
+   }
+
+   async writeHashAttr(hash, key, value) {
+      if (key === 'id' || key === 'url') return;
+      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash));
+      if (!i_fs.existsSync(path)) {
+         return false;
+      }
+      const path_key = i_path.join(path, key);
+      if (i_fs.existsSync(path_key) && !value) {
+         i_fs.unlinkSync(path_key);
+         return true;
+      }
+      i_fs.writeFileSync(path_key, value);
+      return true;
+   }
+
    async getHashUrl(hash) {
       const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash), 'url');
       if (!i_fs.existsSync(path)) {

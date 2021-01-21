@@ -1,5 +1,5 @@
 # matchbox
-General search engine in JS
+Source code search engine in JS
 
 ### Start Server
 

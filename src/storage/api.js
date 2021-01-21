@@ -5,6 +5,13 @@ const i_auth = require('../auth');
 const i_util = require('../util');
 const i_trigram_engine = require('./trigram_engine');
 
+(function () {
+   if (!process.env.MATCHBOX_TRIGRAM_BASEDIR) {
+      console.error('[!] MATCHBOX_TRIGRAM_BASEDIR env var is required.');
+      process.exit(-1);
+   }
+})();
+
 const env = {
    trigramBaseDir: i_path.resolve(process.env.MATCHBOX_TRIGRAM_BASEDIR)
 };

@@ -8,7 +8,7 @@
       - 0.json ---> json:{id: hash}
 
       hash  ---> sha256(text) + md5(text)
-      /hash|{4} ---> json:{ url, id }
+      /hash|{4}/... ---> id, urls
  */
 
 const i_path = require('path');
@@ -145,7 +145,7 @@ class TrigramSearchEngine {
       return i_path.join('/', `${b}`, `${c}`, `${d}`, `${group}.json`);
    }
 
-   getHashPath(hash) {
+   getHashDir(hash) {
       if (!hash || !hash.length) return null;
       const p = [];
       for (let i = 0, n = hash.length; i < n; i += 4) {
@@ -199,68 +199,69 @@ class TrigramSearchEngine {
    }
 
    async hasHash(hash) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash), 'id');
       return i_fs.existsSync(path);
    }
 
    async writeHash(hash, id, url) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
-      const dir = i_path.dirname(path);
+      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash));
       if (i_fs.existsSync(path)) {
          throw 'exist';
       }
-      i_fs.mkdirSync(dir, { recursive: true });
-      const obj = { id: id, url: [] };
-      if (url) obj.url = [url];
-      i_fs.writeFileSync(path, JSON.stringify(obj));
-      return obj;
+      i_fs.mkdirSync(path, { recursive: true });
+      const path_id = i_path.join(path, 'id');
+      const path_url = i_path.join(path, 'url');
+      i_fs.writeFileSync(path_id, `${id}`);
+      const obj = [];
+      if (url) obj.push(url);
+      i_fs.writeFileSync(path_url, JSON.stringify(obj));
+      return id;
    }
 
-   async getHashObj(hash) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
+   async getHashId(hash) {
+      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash), 'id');
       if (!i_fs.existsSync(path)) {
          return null;
       }
-      const blob = i_fs.readFileSync(path);
-      const obj = JSON.parse(blob);
-      return obj;
+      const blob = i_fs.readFileSync(path).toString();
+      return parseInt(blob);
    }
 
    async getHashUrl(hash) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash), 'url');
       if (!i_fs.existsSync(path)) {
          return [];
       }
       const blob = i_fs.readFileSync(path);
       const obj = JSON.parse(blob);
-      return (obj && obj.url) || [];
+      return obj || [];
    }
 
    async addHashUrl(hash, url) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash), 'url');
       if (!i_fs.existsSync(path)) {
          throw 'not-exist';
       }
       const blob = i_fs.readFileSync(path);
       const obj = JSON.parse(blob);
-      if (obj.url && !obj.url.includes(url)) {
-         obj.url.push(url);
+      if (obj && !obj.includes(url)) {
+         obj.push(url);
          i_fs.writeFileSync(path, JSON.stringify(obj));
       }
       return obj;
    }
 
    async delHashUrl(hash, url) {
-      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
+      const path = i_path.join(this.baseDir, '_hash', this.getHashDir(hash), 'url');
       if (!i_fs.existsSync(path)) {
          throw 'not-exist';
       }
       const blob = i_fs.readFileSync(path);
       const obj = JSON.parse(blob);
-      if (obj.url) {
-         const i = obj.url.indexOf(url);
+      if (obj) {
+         const i = obj.indexOf(url);
          if (i >= 0) {
-            obj.url = obj.url.splice(i, 1);
+            obj.splice(i, 1);
             i_fs.writeFileSync(path, JSON.stringify(obj));
          }
       }
@@ -336,8 +337,8 @@ class TrigramSearchEngine {
       // TODO: race condition still exists
       // util we use a map to record processing hash
       if (await this.hasHash(hash)) {
-         const obj = url?(await this.getHashObj(hash)):(await this.addHashUrl(hash, url));
-         return obj.id;
+         if (url) await this.addHashUrl(hash, url);
+         return await this.getHashId(hash);
       }
 
       const visited = {};

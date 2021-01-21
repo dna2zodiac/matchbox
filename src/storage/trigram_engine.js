@@ -93,6 +93,24 @@ class Bitmap {
       }
    }
 
+   sub(another) {
+      /*
+            1010101010101
+            1111110000000
+        sub -------------
+            0000001010101
+       */
+      for (let i = 0, n = this.bitmap.length; i < n; i++) {
+         this.bitmap[i] &= 0xff & (~(another.bitmap[i] || 0))
+      }
+   }
+
+   clone() {
+      const one = new Bitmap(0);
+      one.bitmap = Buffer.from(this.bitmap);
+      return one;
+   }
+
    async asyncForEach(fn) {
       for (let i = 0, n = this.bitmap.length; i < n; i++) {
          let bit = this.bitmap[i];

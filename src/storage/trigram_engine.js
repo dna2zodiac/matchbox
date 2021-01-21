@@ -210,8 +210,19 @@ class TrigramSearchEngine {
          throw 'exist';
       }
       i_fs.mkdirSync(dir, { recursive: true });
-      const obj = { id: id, url: [url] };
+      const obj = { id: id, url: [] };
+      if (url) obj.url = [url];
       i_fs.writeFileSync(path, JSON.stringify(obj));
+      return obj;
+   }
+
+   async getHashObj(hash) {
+      const path = i_path.join(this.baseDir, '_hash', this.getHashPath(hash));
+      if (!i_fs.existsSync(path)) {
+         return null;
+      }
+      const blob = i_fs.readFileSync(path);
+      const obj = JSON.parse(blob);
       return obj;
    }
 
@@ -315,13 +326,17 @@ class TrigramSearchEngine {
       });
    }
 
+   async addDocIndexForText(text) {
+      return await this.addDocIndex('', text);
+   }
+
    async addDocIndex(url, text) {
       if (text.length < 3) return null;
       const hash = await this.hashText(text);
       // TODO: race condition still exists
       // util we use a map to record processing hash
       if (await this.hasHash(hash)) {
-         const obj = await this.addHashUrl(hash, url);
+         const obj = url?(await this.getHashObj(hash)):(await this.addHashUrl(hash, url));
          return obj.id;
       }
 
@@ -384,11 +399,7 @@ class TrigramSearchEngine {
       return bitmap;
    }
 
-   async search(query, options) {
-      if (!options) options = {};
-      if (options.n === undefined) options.n = 100;
-      if (options.case === undefined) options.case = true;
-
+   async searchForBitmap(query, caseOn) {
       const q = query.split(/\s+/).join(' ').trim();
       // TODO: too long query; want to fixed 1024?
       if (q.length > 1024) q = q.substring(0, 1024);
@@ -413,10 +424,19 @@ class TrigramSearchEngine {
       // }
 
       const bitmap = (
-         options.case?
+         caseOn?
          (await this.searchGetCaseSensitiveBitmap(ts)):
          (await this.searchGetCaseInsensitiveBitmap(ts))
       );
+      return bitmap;
+   }
+
+   async search(query, options) {
+      if (!options) options = {};
+      if (options.n === undefined) options.n = 100;
+      if (options.case === undefined) options.case = true;
+
+      const bitmap = await this.searchForBitmap(query, options.case);
 
       const r = [];
       await bitmap.asyncForEach(async (id) => {

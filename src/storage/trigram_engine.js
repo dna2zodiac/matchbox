@@ -41,6 +41,11 @@ function bufToInt32(buf, index) {
    return num;
 }
 
+function transformLine(line) {
+   if (!line) return line;
+   return line.split(/\s+/).join(' ').trim();
+}
+
 class Bitmap {
    /*
       support scale:
@@ -320,6 +325,77 @@ class TrigramSearchEngine {
       return hash;
    }
 
+   /*
+       abcdefg => abc, bcd, cde, def, efg (1)
+       - search(abc, efg) => (1) (1)
+       abcdef  => abc, bcd, cde, def => (1)
+       efgwof  => efg, fgw, gwo, wof => (2)
+       - search(abc, efg) => (1) (2)
+    */
+   async writeTrigramLineMap(hash, text) {
+      // n/4B ('tri\0' m/4B (L/4B ... [m]) ... [n])
+      const map = {};
+      if (!text || text.length < 3) return map;
+      const lines = text.split('\n');
+      lines.forEach((line, lineno) => {
+         line = transformLine(line);
+         if (!line || line.length < 3) return;
+         for (let i = 0, n = line.length - 3; i <= n; i++) {
+            const trigram = text.substring(i, i+3);
+            if (!map[trigram]) map[trigram] = [];
+            if (map[trigram].indexOf(lineno) < 0) map[trigram].push(lineno);
+         }
+      });
+
+      let buf = Buffer.alloc(0);
+      const tris = Object.keys(map);
+      // max trigram: 2^32 = 4.2B
+      buf = Buffer.concat([buf, int32ToBuffer(tris.length)]);
+      tris.forEach((tri) => {
+         const list = map[tri];
+         const n = list.length;
+         const bufList = Buffer.alloc(n * 4 + 4);
+         bufList.writeUInt32LE(n);
+         for (let i = 1; i <= n; i++) {
+            bufList.writeUInt32LE(list[i-1], i * 4);
+         }
+         buf = Buffer.concat([buf, Buffer.from(tri + '\0'), bufList]);
+      });
+      await this.writeHashAttr(hash, '_linemap', buf);
+      return map;
+   }
+
+   async readTrigramLineMap(hash) {
+      const buf = await this.getHashAttr(hash, '_linemap');
+      const map = {};
+      if (!buf) return map;
+      const N = bufToInt32(buf, 0);
+      let base = 4;
+      for (let i = 0; i < N; i++) {
+         const cstri = readCString(buf, base);
+         const trigram = buf.slice(base, cstri);
+         map[trigram] = [];
+         base = cstri + 1;
+         const M = bufToInt32(buf, base);
+         base += 4;
+         for (let j = 0; j < M; j++) {
+            const x = bufToInt32(buf, base);
+            map[trigram].push(x);
+            base += 4;
+         }
+      }
+      return map;
+
+      function readCString(buf, offset) {
+         let end = offset;
+         const n = buf.length;
+         while (end < n && buf[end] !== 0) {
+            end ++;
+         }
+         return end;
+      }
+   }
+
    async trigramAddId(trigram, id) {
       const path = i_path.join(this.baseDir, '_trigram', this.getTrigramPath(trigram));
       const dir = i_path.dirname(path);
@@ -386,7 +462,7 @@ class TrigramSearchEngine {
       const visited = {};
       const lines = text.split('\n');
       lines.forEach((line) => {
-         line = line.split(/\s+/).join(' ').trim();
+         line = transformLine(line);
          if (line.length < 3) return;
          for (let j = 0, m = line.length - 3; j <= m; j++) {
             visited[text.substring(j, j+3)] = 1;
@@ -509,6 +585,11 @@ if (require.main === module) {
       console.log('doc id =', await se.addDocIndex('test://hello/world/3', 'what a bug'));
       console.log('sensitive search', await se.search('World', { n: 10, case: true }), ' -> nothing');
       console.log('insensitive search', await se.search('World', { n: 10, case: false }), ' -> count=2');
+
+      const text = 'this is a wonderful world?';
+      const hash = await se.hashText(text);
+      console.log('write:', JSON.stringify(await se.writeTrigramLineMap(hash, text)));
+      console.log('read:', JSON.stringify(await se.readTrigramLineMap(hash)));
    }
    main();
 }
